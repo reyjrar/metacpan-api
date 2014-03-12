@@ -1,73 +1,85 @@
 package MetaCPAN::Script::Release;
+
 use Moose;
-with 'MooseX::Getopt';
-with 'MetaCPAN::Role::Common';
-use Log::Contextual qw( :log :dlog );
-use PerlIO::gzip;
+
+with 'MooseX::Getopt', 'MetaCPAN::Role::Common';
 
 BEGIN {
     $ENV{PERL_JSON_BACKEND} = 'JSON::XS';
 }
 
-use Path::Class qw(file dir);
-use File::Temp      ();
-use CPAN::Meta      ();
-use DateTime        ();
-use List::Util      ();
-use List::MoreUtils ();
-use Module::Metadata 1.000012 ();    # Improved package detection.
 use CPAN::DistnameInfo ();
+use CPAN::Meta         ();
+use DateTime           ();
 use File::Find         ();
-use File::stat         ();
-use MetaCPAN::Script::Latest;
-use Parse::PMFile;
 use File::Find::Rule;
-use Try::Tiny;
+use File::Temp ();
+use File::stat ();
 use LWP::UserAgent;
+use List::MoreUtils ();
+use List::Util      ();
+use Log::Contextual qw( :log :dlog );
 use MetaCPAN::Document::Author;
+use MetaCPAN::Script::Latest;
+use Module::Metadata 1.000012 ();    # Improved package detection.
+use Parse::PMFile;
+use Path::Class qw(file dir);
+use PerlIO::gzip;
+use Try::Tiny;
 
 has latest => (
     is            => 'ro',
     isa           => 'Bool',
     default       => 0,
-    documentation => 'run \'latest\' script after each release'
+    documentation => q{run 'latest' script after each release},
 );
+
 has age => (
     is            => 'ro',
     isa           => 'Int',
-    documentation => 'index releases no older than x hours (undef)'
+    documentation => 'index releases no older than x hours (undef)',
 );
+
 has children => (
     is            => 'ro',
     isa           => 'Int',
     default       => 2,
     documentation => 'number of worker processes (2)'
 );
+
 has skip => (
     is            => 'ro',
     isa           => 'Bool',
     default       => 0,
-    documentation => 'skip already indexed modules (0)'
+    documentation => 'skip already indexed modules (0)',
 );
+
 has status => (
     is            => 'ro',
     isa           => 'Str',
     default       => 'cpan',
-    documentation => "status of the indexed releases (cpan)"
+    documentation => 'status of the indexed releases (cpan)',
 );
+
 has detect_backpan => (
     is            => 'ro',
     isa           => 'Bool',
     default       => 0,
-    documentation => 'enable when indexing from a backpan'
+    documentation => 'enable when indexing from a backpan',
 );
-has backpan_index => ( is => 'ro', lazy_build => 1 );
+
+has backpan_index => (
+    is      => 'ro',
+    lazy    => 1,
+    builder => '_build_backpan_index',
+);
 
 has perms => (
-    is         => 'ro',
-    isa        => 'HashRef',
-    lazy_build => 1,
-    traits     => ['NoGetopt']
+    is      => 'ro',
+    isa     => 'HashRef',
+    lazy    => 1,
+    traits  => ['NoGetopt'],
+    builder => '_build_perms',
 );
 
 sub run {
