@@ -9,8 +9,11 @@ use MetaCPAN::Util;
 is( MetaCPAN::Util::author_dir('OALDERS'), 'id/O/OA/OALDERS', 'author_dir' );
 is( MetaCPAN::Util::digest( 'foo', 'bar' ),
     '4sMAo5MRot_K_3mVKEFct0wZMX8', 'digest' );
-is( MetaCPAN::Util::numify_version('0.1.1'),  0.001001,    'numify_version' );
+is( MetaCPAN::Util::numify_version('0.1.1'), 0.001001, 'numify_version' );
+
 is( MetaCPAN::Util::fix_version('1_234_567'), 10023400567, 'fix_version' );
+is( MetaCPAN::Util::fix_version(undef), undef, 'fix_version returns undef' );
+
 is( MetaCPAN::Util::strip_pod('L<foobar> baz'), 'foobar baz', 'strip_pod' );
 
 my $pod = <<'EOF';
@@ -31,6 +34,10 @@ EOF
 
 is( MetaCPAN::Util::extract_section( $pod, 'NAME' ),
     'Foo::Bar', 'extract_section' );
+
+is( MetaCPAN::Util::extract_section(undef, 'NAME'),
+    undef, 'extract_section returns undef' );
+
 my ( $ranges, $slop ) = MetaCPAN::Util::pod_lines($pod);
 is_deeply( $ranges, [ [ 0, 5 ], [ 8, 5 ] ], 'pod_lines ranges' );
 is( $slop, 6, 'pod_lines slop' );

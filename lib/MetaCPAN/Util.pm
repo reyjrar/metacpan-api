@@ -26,7 +26,7 @@ sub numify_version {
 
 sub fix_version {
     my $version = shift;
-    return undef unless ( defined $version );
+    return unless ( defined $version );
     if ( $version =~ /^v/ ) {
         eval { $version = eval( version->parse($version)->numify ) };
         return $version + 0 unless ($@);
@@ -56,8 +56,9 @@ sub strip_pod {
 sub extract_section {
     my ( $pod, $section ) = @_;
     eval { $pod = Encode::decode_utf8( $pod, Encode::FB_CROAK ) };
-    return undef
-        unless ( $pod =~ /^=head1\s+$section\b(.*?)(^((\=head1)|(\=cut)))/msi
+    return
+        unless $pod
+        && ( $pod =~ /^=head1\s+$section\b(.*?)(^((\=head1)|(\=cut)))/msi
         || $pod =~ /^=head1\s+$section\b(.*)/msi );
     my $out = $1;
     $out =~ s/^\s*//g;
