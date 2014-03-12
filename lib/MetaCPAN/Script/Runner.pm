@@ -26,7 +26,7 @@ sub run {
 }
 
 sub build_config {
-    my $path = Path::Tiny->cwd->child('etc');
+    my $path = _build_base_path()->child('etc');
 
     my $config = Config::JFDI->new(
         name => 'metacpan',
@@ -50,6 +50,12 @@ sub build_config {
     }
 
     return $config;
+}
+
+sub _build_base_path {
+    return $ENV{HARNESS_ACTIVE}
+        ? Path::Tiny->cwd
+        : Path::Tiny->new($FindBin::RealBin)->parent;
 }
 
 # AnyEvent::Run calls the main method
