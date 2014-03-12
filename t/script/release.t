@@ -1,23 +1,24 @@
 use strict;
 use warnings;
+
 use Test::More;
-use MetaCPAN::Script::Runner;
-use MetaCPAN::Script::Release;
-use FindBin;
-use File::Temp qw( tempdir );
-use File::Spec::Functions qw( catfile );
+
 use Archive::Any;
+use File::Spec::Functions qw( catfile );
+use File::Temp qw( tempdir );
+use FindBin;
+use MetaCPAN::Script::Release;
+use MetaCPAN::Script::Runner;
+use MetaCPAN::Util;
+use Path::Tiny;
 
-my $authordir = "t/var/tmp/fakecpan/authors/id/L/LO/LOCAL";
+my $config = MetaCPAN::Script::Runner->build_config;
 
-my $config = do {
-
-    # build_config expects test to be t/*.t
-    local $FindBin::RealBin = "$FindBin::RealBin/../..";
-    MetaCPAN::Script::Runner->build_config;
-};
+my $authordir = Path::Tiny->new( $config->{cpan} )->child('authors')
+    ->child( MetaCPAN::Util::author_dir('LOCAL') );
 
 my $script = MetaCPAN::Script::Release->new($config);
+
 my $root = tempdir( CLEANUP => 1, TMPDIR => 1 );
 
 my $ext = 'tar.gz';
@@ -29,8 +30,9 @@ foreach my $test (
 {
     my ( $name, $genby, $files ) = @$test;
 
-    my $path = "$authordir/$name.$ext";
-    die "You need to build your fakepan (with t/fakepan.t) first"
+    my $path = $authordir->child("$name.$ext");
+
+    die 'You need to build your fakepan (with t/fakepan.t) first'
         unless -e $path;
 
     my $archive = Archive::Any->new($path);
