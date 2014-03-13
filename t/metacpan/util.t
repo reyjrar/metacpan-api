@@ -4,8 +4,6 @@ use warnings;
 use MetaCPAN::Util;
 use Test::Most;
 
-use MetaCPAN::Util;
-
 is( MetaCPAN::Util::author_dir('OALDERS'), 'id/O/OA/OALDERS', 'author_dir' );
 is( MetaCPAN::Util::digest( 'foo', 'bar' ),
     '4sMAo5MRot_K_3mVKEFct0wZMX8', 'digest' );

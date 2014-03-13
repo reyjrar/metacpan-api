@@ -19,6 +19,7 @@ sub run {
         = map { ( my $key = $_ ) =~ s/^MetaCPAN::Script:://; lc($key) => $_ }
         plugins();
     die 'Usage: metacpan [command] [args]' unless ($class);
+    Module::Runtime::require_module( $plugins{$class} );
 
     my $config = build_config();
     my $obj    = $plugins{$class}->new_with_options($config);
