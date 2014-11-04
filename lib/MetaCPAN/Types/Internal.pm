@@ -10,7 +10,7 @@ use JSON;
 use MooseX::Getopt::OptionTypeMap;
 use MooseX::Types::Common::String qw(NonEmptySimpleStr);
 use MooseX::Types::Moose qw( ArrayRef Bool HashRef Item Int Num Str Undef );
-use MooseX::Types::Structured qw(Dict Tuple Optional);
+use MooseX::Types::Structured qw( Dict Optional slurpy Tuple );
 
 use MooseX::Types -declare => [
     qw(
@@ -113,7 +113,7 @@ subtype Resources,
     bugtracker =>
         Optional [ Dict [ web => Optional [Str], mailto => Optional [Str] ] ],
     repository => Optional [
-        Dict [
+        slurpy Dict [
             url  => Optional [Str],
             web  => Optional [Str],
             type => Optional [Str]
