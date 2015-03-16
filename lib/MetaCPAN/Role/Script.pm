@@ -3,7 +3,6 @@ package MetaCPAN::Role::Script;
 use strict;
 use warnings;
 
-use ElasticSearch;
 use ElasticSearchX::Model::Document::Types qw(:all);
 use FindBin;
 use Log::Contextual qw( :dlog );
@@ -27,7 +26,7 @@ has es => (
     is            => 'ro',
     required      => 1,
     coerce        => 1,
-    documentation => 'ElasticSearch http connection string',
+    documentation => 'Elasticsearch http connection string',
 );
 
 has model => ( lazy_build => 1, is => 'ro', traits => ['NoGetopt'] );
@@ -105,7 +104,7 @@ sub _build_cpan {
 }
 
 sub remote {
-    shift->es->transport->default_servers->[0];
+    shift->es->nodes->info->[0];
 }
 
 sub run { }
@@ -114,7 +113,7 @@ before run => sub {
 
     $self->set_logger_once;
 
-    Dlog_debug {"Connected to $_"} $self->remote;
+    #Dlog_debug {"Connected to $_"} $self->remote;
 };
 
 1;

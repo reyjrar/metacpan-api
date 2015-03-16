@@ -4,7 +4,6 @@ use strict;
 use warnings;
 
 use CPAN::Meta;
-use ElasticSearch;
 use ElasticSearchX::Model::Document::Types qw(:all);
 use JSON;
 use MooseX::Getopt::OptionTypeMap;
@@ -38,14 +37,13 @@ coerce PerlMongers, from HashRef, via { [$_] };
 subtype Blog, as ArrayRef [ Dict [ url => NonEmptySimpleStr, feed => Str ] ];
 coerce Blog, from HashRef, via { [$_] };
 
-subtype Stat,
-    as Dict [
+subtype Stat, as Dict [
     mode  => Int,
     uid   => Int,
     gid   => Int,
     size  => Int,
     mtime => Int
-    ];
+];
 
 subtype Module, as ArrayRef [ Type ['MetaCPAN::Document::Module'] ];
 coerce Module, from ArrayRef, via {
@@ -96,18 +94,16 @@ coerce Profile, from HashRef,
 subtype Tests,
     as Dict [ fail => Int, na => Int, pass => Int, unknown => Int ];
 
-subtype BugSummary,
-    as Dict [
+subtype BugSummary, as Dict [
     (
         map { $_ => Optional [Int] }
             qw(new open stalled patched resolved rejected active closed)
     ),
     type   => Str,
     source => Str
-    ];
+];
 
-subtype Resources,
-    as Dict [
+subtype Resources, as Dict [
     license => Optional [ ArrayRef [Str] ],
     homepage => Optional [Str],
     bugtracker =>
@@ -119,7 +115,7 @@ subtype Resources,
             type => Optional [Str]
         ]
     ]
-    ];
+];
 
 coerce Resources, from HashRef, via {
     my $r         = $_;
