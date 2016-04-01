@@ -182,7 +182,6 @@ sub run {
 
     # Call Fastly to purge
     $self->cdn_purge_cpan_distnameinfos( \@module_to_purge_dists );
-
 }
 
 sub import_archive {
