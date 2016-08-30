@@ -17,7 +17,7 @@ use Moose;
 use Parse::CSV;
 use Pithub;
 use URI::Escape qw(uri_escape);
-use MetaCPAN::Types qw( ArrayRef Str );
+use MetaCPAN::Types qw( HashRef );
 
 with 'MetaCPAN::Role::Script', 'MooseX::Getopt';
 
@@ -39,13 +39,6 @@ has github_token => (
     builder => '_build_github_token',
 );
 
-has source => (
-    is       => 'ro',
-    required => 1,
-    isa      => ArrayRef [Str],
-    default  => sub { [qw(rt github)] },
-);
-
 has ua => (
     is      => 'ro',
     default => sub { LWP::UserAgent->new },
@@ -56,6 +49,12 @@ has pithub => (
     isa     => 'Pithub',
     lazy    => 1,
     builder => '_build_pithub',
+);
+
+has _bugs => (
+    is      => 'ro',
+    isa     => HashRef,
+    default => sub { +{} },
 );
 
 sub _build_github_token {
@@ -76,37 +75,21 @@ sub _build_pithub {
 
 sub run {
     my $self = shift;
-    my $bugs = {};
-
-# NOTE: Order is important here.
-# Hash keys are distribution names.
-# rt issues are counted for all dists (the download tsv contains everything).
-# gh issues are counted for any dist with a github url in `resources.bugtracker.web`.
-# Any dists in the second will overwrite the first.
-    foreach my $source ( @{ $self->source } ) {
-        if ( $source eq 'github' ) {
-            log_debug {'Fetching GitHub issues'};
-            $bugs = { %$bugs, %{ $self->retrieve_github_bugs } };
-        }
-        elsif ( $source eq 'rt' ) {
-            log_debug {'Fetching RT bugs'};
-            $bugs = { %$bugs, %{ $self->retrieve_rt_bugs } };
-        }
-    }
-    $self->index_bug_summary($bugs);
-
+    $self->retrieve_rt_bugs();
+    $self->retrieve_github_bugs();
+    $self->index_bug_summary();
     return 1;
 }
 
 sub index_bug_summary {
-    my ( $self, $bugs ) = @_;
+    my $self = shift;
     $self->index->refresh;
     my $dists = $self->index->type('distribution');
     my $bulk = $self->index->bulk( size => 300 );
-    for my $dist ( keys %$bugs ) {
+    for my $dist ( keys %{ $self->_bugs } ) {
         my $doc = $dists->get($dist);
         $doc ||= $dists->new_document( { name => $dist } );
-        $doc->_set_bugs( $bugs->{ $doc->name } );
+        $doc->_set_bugs( $self->_bugs->{ $doc->name } );
         $bulk->put($doc);
     }
     $bulk->commit;
@@ -114,6 +97,8 @@ sub index_bug_summary {
 
 sub retrieve_github_bugs {
     my $self = shift;
+    log_info {'Fetching GitHub issues'};
+
     my $scroll
         = $self->index->type('release')->find_github_based->scroll('5m');
     log_debug { sprintf( "Found %s repos", $scroll->total ) };
@@ -137,7 +122,7 @@ sub retrieve_github_bugs {
         );
         next unless ( $closed->success );
         $summary->{ $release->{distribution} }
-            = { open => 0, closed => 0, source => $source, type => 'github' };
+            = { open => 0, closed => 0, source => $source };
         $summary->{ $release->{distribution} }->{open}++
             while ( $open->next );
         $summary->{ $release->{distribution} }->{closed}++
@@ -146,7 +131,8 @@ sub retrieve_github_bugs {
             = $summary->{ $release->{distribution} }->{open};
 
     }
-    return $summary;
+
+    $self->_bugs->{$_}{github} = $summary->{$_} for keys %{$summary};
 }
 
 # Try (recursively) to find a github url in the resources hash.
@@ -170,14 +156,17 @@ sub github_user_repo_from_resources {
 }
 
 sub retrieve_rt_bugs {
-    my ($self) = @_;
+    my $self = shift;
+    log_info {'Fetching RT issues'};
 
     my $resp = $self->ua->request( GET $self->rt_summary_url );
 
     log_error { $resp->status_line } unless $resp->is_success;
 
     # NOTE: This is sending a byte string.
-    return $self->parse_tsv( $resp->content );
+    my $rt = $self->parse_tsv( $resp->content );
+
+    $self->_bugs->{$_}{rt} = $rt->{$_} for keys %{$rt};
 }
 
 sub parse_tsv {
@@ -195,7 +184,6 @@ sub parse_tsv {
     my %summary;
     while ( my $row = $tsv_parser->fetch ) {
         $summary{ $row->{dist} } = {
-            type   => 'rt',
             source => $self->rt_dist_url( $row->{dist} ),
             active => $row->{active},
             closed => $row->{inactive},
