@@ -15,34 +15,10 @@ my @ROGUE_DISTRIBUTIONS = qw(
 );
 
 sub find {
-    my ( $self, $module ) = @_;
-    my @candidates = $self->index->type('file')->filter(
-        {
-            bool => {
-                must => [
-                    { term => { indexed    => 1, } },
-                    { term => { authorized => 1 } },
-                    { term => { status     => 'latest', } },
-                ],
-                should => [
-                    { term => { 'documentation' => $module } },
-                    {
-                        nested => {
-                            path => 'module',
-                            filter =>
-                                { term => { 'module.name' => $module } },
-                        }
-                    }
-                ]
-            }
-        }
-        )->sort(
-        [
-            { 'date'       => { order => 'desc' } },
-            { 'mime'       => { order => 'asc' } },
-            { 'stat.mtime' => { order => 'desc' } }
-        ]
-        )->size(100)->all;
+    my ( $self, $module, $args ) = @_;
+    $args->{'size'} = 100;
+
+    my @candidates = $self->_find_candidates( $module, $args )->all;
 
     my ($file) = grep {
         grep { $_->indexed && $_->authorized && $_->name eq $module }
@@ -52,6 +28,97 @@ sub find {
 
     $file ||= shift @candidates;
     return $file ? $self->get( $file->id ) : undef;
+}
+
+sub _find_candidates {
+    my ( $self, $module, $args ) = @_;
+    $args ||= {};
+
+    my $size             = $args->{size} || 100;
+    my $source           = $args->{source};
+    my $dev              = $args->{dev};
+    my $version          = $args->{version};
+    my $explicit_version = $version && $version =~ /==/;
+
+    # exclude backpan if dev, and
+    # require released modules if neither dev nor explicit version
+    my @filters
+        = $dev ? { not => { term => { status => 'backpan' } } }
+        : !$explicit_version ? { term => { maturity => 'released' } }
+        :                      ();
+
+    my $version_filters = $self->_version_filters($version);
+
+    # filters to be applied to the nested modules
+    my $module_f = {
+        nested => {
+            path       => 'module',
+            inner_hits => { _source => 'version' },
+            filter     => {
+                bool => {
+                    must => [
+                        { term => { 'module.authorized' => 1 } },
+                        { term => { 'module.indexed'    => 1 } },
+                        { term => { 'module.name'       => $module } },
+                        (
+                            exists $version_filters->{must}
+                            ? @{ $version_filters->{must} }
+                            : ()
+                        )
+                    ],
+                    (
+                        exists $version_filters->{must_not}
+                        ? ( must_not => [ $version_filters->{must_not} ] )
+                        : ()
+                    )
+                }
+            }
+        }
+    };
+
+    my $filter
+        = @filters
+        ? { bool => { must => [ @filters, $module_f ] } }
+        : $module_f;
+
+    # sort by score, then version desc, then date desc
+    my @sort = (
+        '_score',
+        {
+            'module.version_numified' => {
+                mode          => 'max',
+                order         => 'desc',
+                nested_filter => $module_f->{nested}{filter}
+            }
+        },
+        { date => { order => 'desc' } }
+    );
+
+    my $query
+        = $dev
+        ? { filtered => { filter => $filter } }
+        : {    # if not dev, then prefer latest > cpan > backpan
+        function_score => {
+            filter     => $filter,
+            score_mode => 'first',
+            boost_mode => 'replace',
+            functions  => [
+                {
+                    filter => { term => { status => 'latest' } },
+                    weight => 3
+                },
+                {
+                    filter => { term => { status => 'cpan' } },
+                    weight => 2
+                },
+                { filter => { match_all => {} }, weight => 1 },
+            ]
+        }
+        };
+
+    my $res = $self->size($size)->query($query);
+    $source and $res = $res->source($source);
+    return $res->sort( \@sort );
 }
 
 sub find_pod {
@@ -187,94 +254,9 @@ Sorting:
 sub find_download_url {
     my ( $self, $module, $args ) = @_;
     $args ||= {};
-
-    my $dev              = $args->{dev};
-    my $version          = $args->{version};
-    my $explicit_version = $version && $version =~ /==/;
-
-    # exclude backpan if dev, and
-    # require released modules if neither dev nor explicit version
-    my @filters
-        = $dev ? { not => { term => { status => 'backpan' } } }
-        : !$explicit_version ? { term => { maturity => 'released' } }
-        :                      ();
-
-    my $version_filters = $self->_version_filters($version);
-
-    # filters to be applied to the nested modules
-    my $module_f = {
-        nested => {
-            path       => 'module',
-            inner_hits => { _source => 'version' },
-            filter     => {
-                bool => {
-                    must => [
-                        { term => { 'module.authorized' => 1 } },
-                        { term => { 'module.indexed'    => 1 } },
-                        { term => { 'module.name'       => $module } },
-                        (
-                            exists $version_filters->{must}
-                            ? @{ $version_filters->{must} }
-                            : ()
-                        )
-                    ],
-                    (
-                        exists $version_filters->{must_not}
-                        ? ( must_not => [ $version_filters->{must_not} ] )
-                        : ()
-                    )
-                }
-            }
-        }
-    };
-
-    my $filter
-        = @filters
-        ? { bool => { must => [ @filters, $module_f ] } }
-        : $module_f;
-
-    # sort by score, then version desc, then date desc
-    my @sort = (
-        '_score',
-        {
-            'module.version_numified' => {
-                mode          => 'max',
-                order         => 'desc',
-                nested_filter => $module_f->{nested}{filter}
-            }
-        },
-        { date => { order => 'desc' } }
-    );
-
-    my $query;
-
-    if ($dev) {
-        $query = { filtered => { filter => $filter } };
-    }
-    else {
-        # if not dev, then prefer latest > cpan > backpan
-        $query = {
-            function_score => {
-                filter     => $filter,
-                score_mode => 'first',
-                boost_mode => 'replace',
-                functions  => [
-                    {
-                        filter => { term => { status => 'latest' } },
-                        weight => 3
-                    },
-                    {
-                        filter => { term => { status => 'cpan' } },
-                        weight => 2
-                    },
-                    { filter => { match_all => {} }, weight => 1 },
-                ]
-            }
-        };
-    }
-
-    return $self->size(1)->query($query)
-        ->source( [ 'download_url', 'date', 'status' ] )->sort( \@sort );
+    $args->{'source'} = [qw( download_url date status )];
+    $args->{'size'}   = 1;
+    return $self->_find_candidates( $module, $args );
 }
 
 sub _version_filters {
